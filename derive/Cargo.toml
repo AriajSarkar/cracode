@@ -1,0 +1,20 @@
+[package]
+name = "cracode_derive"
+version.workspace = true # remember to update cracode
+
+edition = "2021"
+rust-version = "1.85.0"
+
+repository = "https://github.com/AriajSarkar/cracode"
+documentation = "https://docs.rs/cracode_derive"
+readme = "./readme.md"
+categories = ["encoding", "network-programming"]
+keywords = ["binary", "encode", "decode", "serialize", "deserialize"]
+license = "MIT"
+description = "Implementation of #[derive(Encode, Decode)] for cracode"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+virtue = "0.0.19"

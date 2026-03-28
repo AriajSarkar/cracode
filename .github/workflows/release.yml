@@ -1,0 +1,128 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Run all tests
+        run: |
+          set -euo pipefail
+          cargo test --workspace --all-features --all-targets --verbose
+          cargo clippy --workspace --all-features --all-targets -- -D warnings
+          cargo fmt -- --check
+
+      - name: Build documentation
+        run: cargo doc --all-features --no-deps
+
+      - name: Security audit
+        run: |
+          set -euo pipefail
+          cargo install cargo-audit
+          cargo audit
+
+      - name: Resolve release version
+        id: release_meta
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          PACKAGE_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('Cargo.toml', 'rb'))['package']['version'])")
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+
+          echo "Cargo.toml version: $PACKAGE_VERSION"
+          echo "Git tag version: $TAG_VERSION"
+
+          if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
+            echo "⚠️ Tag v$TAG_VERSION does not match Cargo.toml version $PACKAGE_VERSION"
+            echo "⚠️ Using Cargo.toml version as the authoritative README/publish version"
+          fi
+
+          echo "version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare README for publish
+        id: prepare_readme
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.release_meta.outputs.version }}"
+          echo "Ensuring README dependency snippets match Cargo.toml version $VERSION"
+
+          sed -i "s/^\([[:space:]]*\)cracode = \".*\"/\1cracode = \"$VERSION\"/" README.md
+
+          if git diff --quiet README.md; then
+            echo "README already matches Cargo.toml version $VERSION"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "README updated in working tree before publish"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff -- README.md
+          fi
+
+      - name: Publish to crates.io
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: cargo publish --all-features
+
+      - name: Publish derive to crates.io
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: cargo publish --manifest-path derive/Cargo.toml --all-features
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            Cargo.toml
+            README.md
+            LICENSE.md
+
+      - name: Persist README version on main
+        id: sync_readme_main
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.release_meta.outputs.version }}"
+
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+          # Discard pre-publish README edit before switching branches
+          git checkout -- README.md
+
+          git checkout main
+          git pull origin main --rebase
+
+          sed -i "s/^\([[:space:]]*\)cracode = \".*\"/\1cracode = \"$VERSION\"/" README.md
+
+          if git diff --quiet README.md; then
+            echo "README already up to date on main"
+            echo "commit_sha=" >> "$GITHUB_OUTPUT"
+          else
+            git commit -am "docs: update readme version to $VERSION [skip ci]"
+            git push origin main
+
+            COMMIT_SHA=$(git rev-parse HEAD)
+            echo "commit_sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+            echo "Pushed README update to main ($COMMIT_SHA)"
+          fi

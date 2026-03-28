@@ -1,0 +1,75 @@
+[workspace]
+members = ["derive"]
+
+[workspace.package]
+version = "1.0.0"
+
+[workspace.dependencies]
+cracode_derive = { path = "derive", version = "=1.0.0" }
+
+[package]
+name = "cracode"
+version.workspace = true
+
+exclude = ["logo.svg", "examples/*", ".gitignore", ".github/"]
+rust-version = "1.85.0"
+
+publish = true
+
+repository = "https://github.com/AriajSarkar/cracode"
+documentation = "https://docs.rs/cracode"
+readme = "./readme.md"
+categories = ["encoding", "network-programming"]
+keywords = ["binary", "encode", "decode", "serialize", "deserialize"]
+
+license = "MIT"
+description = "A binary serialization / deserialization strategy for transforming structs into bytes and vice versa!"
+
+edition = "2021"
+
+[features]
+default = ["std", "derive"]
+std = ["alloc", "serde?/std"]
+alloc = ["serde?/alloc"]
+derive = ["cracode_derive"]
+
+[dependencies]
+cracode_derive = { workspace = true, optional = true }
+serde = { version = "1.0", default-features = false, optional = true }
+unty = "0.0.5"
+
+# Used for tests
+[dev-dependencies]
+ouroboros = "0.18.3"
+serde_derive = "1.0"
+serde_json = { version = "1.0", default-features = false }
+tempfile = "3.2"
+criterion = "0.8"
+rand = "0.10"
+uuid = { version = "1.1", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+glam = { version = "0.32", features = ["serde"] }
+
+serde = { version = "1.0", features = ["derive"] }
+bumpalo = { version = "3.16.0", features = ["collections"] }
+
+[[bench]]
+name = "varint"
+harness = false
+
+[[bench]]
+name = "inline"
+harness = false
+
+[[bench]]
+name = "string"
+harness = false
+
+[profile.bench]
+codegen-units = 1
+debug = 1
+lto = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
