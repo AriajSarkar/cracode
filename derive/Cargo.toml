@@ -7,7 +7,7 @@ rust-version = "1.85.0"
 
 repository = "https://github.com/AriajSarkar/cracode"
 documentation = "https://docs.rs/cracode_derive"
-readme = "./readme.md"
+readme = "README.md"
 categories = ["encoding", "network-programming"]
 keywords = ["binary", "encode", "decode", "serialize", "deserialize"]
 license = "MIT"
