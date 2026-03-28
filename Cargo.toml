@@ -2,10 +2,10 @@
 members = ["derive"]
 
 [workspace.package]
-version = "1.0.0"
+version = "1.0.1"
 
 [workspace.dependencies]
-cracode_derive = { path = "derive", version = "=1.0.0" }
+cracode_derive = { path = "derive", version = "=1.0.1" }
 
 [package]
 name = "cracode"
