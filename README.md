@@ -44,7 +44,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-cracode = "1.0.0"
+cracode = "{'workspace': True}"
 ```
 
 ## Example
