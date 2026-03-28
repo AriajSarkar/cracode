@@ -12,7 +12,7 @@
           "id": "build",
           "uses": "google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@master",
           "with": {
-            "oss-fuzz-project-name": "cracode",
+            "oss-fuzz-project-name": "bincode",
             "language": "rust"
           }
         },
@@ -20,7 +20,7 @@
           "name": "Run Fuzzers",
           "uses": "google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@master",
           "with": {
-            "oss-fuzz-project-name": "cracode",
+            "oss-fuzz-project-name": "bincode",
             "fuzz-seconds": 300,
             "language": "rust"
           }
