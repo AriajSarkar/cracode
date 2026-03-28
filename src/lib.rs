@@ -71,7 +71,6 @@
 //! [`net::TcpStream`]: std::net::TcpStream
 //!
 
-
 #![crate_name = "cracode"]
 #![crate_type = "rlib"]
 
