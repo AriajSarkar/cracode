@@ -1,0 +1,211 @@
+name: Continuous Fuzzing
+
+on:
+  schedule:
+    # Run every 6 hours for continuous coverage
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      fuzz-seconds:
+        description: 'Seconds to fuzz per target'
+        required: false
+        default: '1800'
+      sanitizer:
+        description: 'Sanitizer to use'
+        required: false
+        default: 'address'
+        type: choice
+        options:
+          - address
+          - leak
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  fuzz:
+    name: Fuzz ${{ matrix.target }} (${{ matrix.sanitizer }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [roundtrip, compat]
+        sanitizer: [address]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      # Restore accumulated corpus from prior runs (acts like OSS-Fuzz corpus management)
+      - name: Restore corpus cache
+        uses: actions/cache@v4
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-${{ matrix.target }}-
+
+      - name: Create corpus directory
+        run: mkdir -p fuzz/corpus/${{ matrix.target }}
+
+      # Run fuzzer for 30 minutes per target (configurable via workflow_dispatch)
+      - name: Run fuzzer
+        run: |
+          FUZZ_SECONDS="${{ inputs.fuzz-seconds || '1800' }}"
+          echo "Fuzzing target '${{ matrix.target }}' with ${{ matrix.sanitizer }} sanitizer for ${FUZZ_SECONDS}s"
+          cargo +nightly fuzz run ${{ matrix.target }} \
+            --sanitizer ${{ matrix.sanitizer }} \
+            -- \
+            -max_total_time=${FUZZ_SECONDS} \
+            -print_final_stats=1 \
+            -print_corpus_stats=1
+
+      # Upload crash inputs so they can be downloaded and reproduced locally
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-${{ matrix.target }}-${{ matrix.sanitizer }}-${{ github.run_id }}
+          path: |
+            fuzz/artifacts/${{ matrix.target }}/*
+          retention-days: 90
+
+      # Automatically file a GitHub issue when a crash is found (like OSS-Fuzz private disclosure)
+      - name: Create issue on crash
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const target = '${{ matrix.target }}';
+            const sanitizer = '${{ matrix.sanitizer }}';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            // Check for existing open issue to avoid duplicates
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'fuzz-crash',
+              state: 'open'
+            });
+
+            const existing = issues.find(i => i.title.includes(target) && i.title.includes(sanitizer));
+            if (existing) {
+              // Add a comment to the existing issue instead of creating a new one
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: `🔄 **Another crash detected**\n\n**Run:** ${runUrl}\n\nCheck the uploaded artifacts for the crash input.`
+              });
+              console.log(`Updated existing issue #${existing.number}`);
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `🐛 Fuzz crash in \`${target}\` (${sanitizer})`,
+                body: [
+                  `A crash was detected by the continuous fuzzer.`,
+                  ``,
+                  `| Detail | Value |`,
+                  `|--------|-------|`,
+                  `| **Target** | \`${target}\` |`,
+                  `| **Sanitizer** | \`${sanitizer}\` |`,
+                  `| **Run** | [View logs](${runUrl}) |`,
+                  ``,
+                  `### Reproducing locally`,
+                  `\`\`\`bash`,
+                  `# Download the crash artifact from the Actions run above, then:`,
+                  `cargo +nightly fuzz run ${target} -- fuzz/artifacts/${target}/<crash-file>`,
+                  `\`\`\``,
+                  ``,
+                  `### Next steps`,
+                  `1. Download the crash artifact from the Actions run`,
+                  `2. Reproduce locally with the command above`,
+                  `3. Fix the root cause`,
+                  `4. Add the crash input to the corpus as a regression test`,
+                ].join('\n'),
+                labels: ['bug', 'fuzz-crash']
+              });
+              console.log('Created new fuzz crash issue');
+            }
+
+  # Separate job: run with leak sanitizer on a slower schedule
+  fuzz-leak:
+    name: Fuzz ${{ matrix.target }} (leak)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [roundtrip, compat]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Restore corpus cache
+        uses: actions/cache@v4
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-${{ matrix.target }}-
+
+      - name: Create corpus directory
+        run: mkdir -p fuzz/corpus/${{ matrix.target }}
+
+      - name: Run fuzzer (leak sanitizer)
+        run: |
+          FUZZ_SECONDS="${{ inputs.fuzz-seconds || '900' }}"
+          echo "Fuzzing target '${{ matrix.target }}' with leak sanitizer for ${FUZZ_SECONDS}s"
+          cargo +nightly fuzz run ${{ matrix.target }} \
+            --sanitizer leak \
+            -- \
+            -max_total_time=${FUZZ_SECONDS} \
+            -print_final_stats=1
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-${{ matrix.target }}-leak-${{ github.run_id }}
+          path: |
+            fuzz/artifacts/${{ matrix.target }}/*
+          retention-days: 90
+
+      - name: Create issue on crash
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const target = '${{ matrix.target }}';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'fuzz-crash',
+              state: 'open'
+            });
+            const existing = issues.find(i => i.title.includes(target) && i.title.includes('leak'));
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: `🔄 **Another leak detected**\n\n**Run:** ${runUrl}`
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `🐛 Memory leak in \`${target}\` (leak sanitizer)`,
+                body: `A memory leak was detected.\n\n**Target:** \`${target}\`\n**Run:** [View logs](${runUrl})\n\nDownload crash artifacts from the run to reproduce.`,
+                labels: ['bug', 'fuzz-crash']
+              });
+            }
