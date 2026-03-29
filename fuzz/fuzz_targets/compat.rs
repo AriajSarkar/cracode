@@ -51,7 +51,7 @@ enum AllTypes {
 fuzz_target!(|data: &[u8]| {
     let config = cracode::config::legacy().with_limit::<1024>();
     #[allow(deprecated)]
-    let mut configv1 = cracodev1::config();
+    let mut configv1 = bincode::config();
     configv1.limit(1024);
     let cracode_v1: Result<AllTypes, _> = configv1.deserialize_from(data);
     let cracode_v2: Result<(AllTypes, _), _> = cracode::decode_from_slice(data, config);
