@@ -33,7 +33,7 @@ jobs:
         target: [roundtrip, compat]
         sanitizer: [address]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@nightly
 
@@ -142,7 +142,7 @@ jobs:
       matrix:
         target: [roundtrip, compat]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@nightly
 
