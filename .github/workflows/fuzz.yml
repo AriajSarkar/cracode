@@ -77,7 +77,7 @@ jobs:
       # Automatically file a GitHub issue when a crash is found (like OSS-Fuzz private disclosure)
       - name: Create issue on crash
         if: failure()
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const target = '${{ matrix.target }}';
@@ -181,7 +181,7 @@ jobs:
 
       - name: Create issue on crash
         if: failure()
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const target = '${{ matrix.target }}';
